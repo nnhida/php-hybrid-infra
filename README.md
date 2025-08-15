@@ -11,4 +11,5 @@ Gambar alur kerja aplikasi
    sudo yum install -y docker-ce docker-ce-cli containerd.io
 2. Konfigurasi file config.php sesuai dengan credentials service AWS anda
 3. Ubah menjadi container docker
-4. Test 
+4. Konfigurasi DNS di MikroTik
+5. Test 
