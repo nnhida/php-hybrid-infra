@@ -1,6 +1,7 @@
 How to deploy this app
 
-![Diagram Aplikasi](UKK CC CS NSA.png)
+Gambar alur kerja aplikasi
+([UKK CC CS NSA.png](https://github.com/adinur21/crud-ukk/blob/main/UKK%20CC%20CS%20NSA.png))
 
 1. Deploy di VM CentOS dengan Apache, Git, Docker
    ```bash
