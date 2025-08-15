@@ -1,5 +1,7 @@
 How to deploy this app
 
+![Diagram Aplikasi](UKK CC CS NSA.png)
+
 1. Deploy di VM CentOS dengan Apache, Git, Docker
    ```bash
    sudo yum update -y
