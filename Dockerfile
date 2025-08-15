@@ -1,33 +1,37 @@
-# Gunakan base image resmi PHP dengan Apache
-FROM php:8.1-apache
+# Gunakan base image AlmaLinux 9 (pengganti CentOS 9 yang stabil)
+FROM almalinux:9
 
-# Install ekstensi PHP yang dibutuhkan (mysqli untuk database)
-RUN docker-php-ext-install mysqli && docker-php-ext-enable mysqli
+# 1. Install Apache (httpd), PHP, ekstensi yang dibutuhkan, dan tools lainnya
+# Menggunakan dnf sebagai package manager
+RUN dnf update -y && \
+    dnf install -y \
+        httpd \
+        php \
+        php-mysqlnd \
+        php-zip \
+        git \
+        unzip && \
+    dnf clean all
 
-# Install dependensi sistem untuk Composer dan AWS SDK (seperti zip)
-RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    zip \
-    libzip-dev \
-    && rm -rf /var/lib/apt/lists/*
-RUN docker-php-ext-install zip
-
-# Install Composer
+# 2. Install Composer (caranya tetap sama, karena universal)
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
+# 3. Atur working directory ke root direktori web Apache
 WORKDIR /var/www/html
 
-# Copy file composer.json dan install dependensi
+# 4. Copy file composer dan install dependensi (AWS SDK)
 COPY composer.json .
-RUN composer install --no-scripts --no-autoloader
+RUN composer install --no-scripts --no-autoloader --no-dev --working-dir=/var/www/html
 
-# Copy sisa file aplikasi ke dalam container
+# 5. Copy sisa file aplikasi ke dalam container
 COPY . .
+RUN composer dump-autoload --optimize --working-dir=/var/www/html
 
-# Jalankan composer dump-autoload untuk generate file autoload
-RUN composer dump-autoload --optimize
+# 6. Atur kepemilikan file ke user 'apache' (user default httpd di CentOS)
+RUN chown -R apache:apache /var/www/html
 
-# Atur kepemilikan agar Apache bisa menulis (jika ada upload di dalam container)
-RUN chown -R www-data:www-data /var/www/html
+# 7. Expose port 80 agar bisa diakses dari luar container
+EXPOSE 80
+
+# 8. Perintah untuk menjalankan Apache di foreground saat container dimulai
+CMD ["/usr/sbin/httpd", "-D", "FOREGROUND"]
