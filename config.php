@@ -4,8 +4,8 @@
 // Sebaiknya gunakan IAM Role jika dijalankan di EC2, namun untuk development lokal/VM, IAM User bisa digunakan.
 define('AWS_ACCESS_KEY_ID', 'GANTI_DENGAN_ACCESS_KEY_ANDA');
 define('AWS_SECRET_ACCESS_KEY', 'GANTI_DENGAN_SECRET_KEY_ANDA');
-define('AWS_SESSION_TOKEN', 'YOUR_SESSION_TOKEN')
-define('AWS_REGION', 'ap-southeast-1'); // Ganti dengan region S3 Bucket Anda, contoh: ap-southeast-1 (Singapura)
+define('AWS_SESSION_TOKEN', 'YOUR_SESSION_TOKEN');
+define('AWS_REGION', 'YOUR_REGION'); // Ganti dengan region S3 Bucket Anda, contoh: ap-southeast-1 (Singapura)
 define('S3_BUCKET', 'GANTI_DENGAN_NAMA_BUCKET_ANDA');
 
 // --- KONFIGURASI DATABASE AWS RDS ---
