@@ -1,45 +1,47 @@
-# **Deploying PHP Website on VM CentOS with Docker, AWS RDS, S3, and MikroTik**
+# Deploying a PHP Website on CentOS VM with Docker, AWS RDS, S3, and MikroTik DNS
 
-## **1. Install CentOS**
+This guide explains how to deploy a PHP-based web application on a CentOS virtual machine using Docker. It connects to AWS RDS for database storage, uses Amazon S3 for image storage, and configures domain resolution using a MikroTik router.
 
-1. Download the **CentOS 9 ISO**.
+---
+
+## 1. Install CentOS on a Virtual Machine
+
+1. Download **CentOS 9 ISO** from the official website.
 2. Create a new VM using **VirtualBox** or **VMware**.
-3. Install CentOS on the VM.
+3. Boot from the ISO and install CentOS on the VM.
 
 ---
 
-## **2. Configure Networking with Dual Adapters**
+## 2. Configure Virtual Network Adapters
 
-To provide both internet access and local connectivity with the host machine:
+To enable internet access and communication with the host machine:
 
-1. Open **VM Settings → Network**.
-2. Attach **two adapters**:
+1. In the VM settings under **Network**:
 
-   * **Adapter 1 (NAT)** → provides internet access.
-   * **Adapter 2 (Host-Only)** → enables local communication with the host.
+   * **Adapter 1 (NAT)**: provides internet access.
+   * **Adapter 2 (Host-Only Adapter)**: allows communication with the host system.
 
 ---
 
-## **3. Network Setup on CentOS**
+## 3. Configure Networking in CentOS
 
-1. Verify the current IP address:
+1. Check your current IP address:
 
    ```bash
    ip a
    ```
 
-2. Modify the network configuration using `nmtui`:
+2. Use the terminal UI to configure your network:
 
    ```bash
    nmtui
    ```
 
-   * In the Ethernet menu, select **Add**.
-   * Assign a name according to your interface name.
+   * Edit or add a connection.
    * Set **IPv4** to **Manual**.
-   * Specify an IP address within the local network range.
+   * Assign a static IP address within the host-only network range.
 
-3. Restart the network service:
+3. Restart the Network Manager:
 
    ```bash
    sudo systemctl restart NetworkManager
@@ -49,51 +51,73 @@ To provide both internet access and local connectivity with the host machine:
 
    ```bash
    ping google.com
-   ping [local_ip]
+   ping [host_machine_ip]
+   ```
+
+5. Open HTTP port 80 on the firewall:
+
+   ```bash
+   sudo firewall-cmd --add-port=80/tcp --permanent
+   sudo firewall-cmd --reload
    ```
 
 ---
 
-## **Additional Configuration**
+## 4. (Optional) Enable SSH Access
 
-1. Update the SSH daemon configuration at `/etc/ssh/sshd-config` to allow local access:
+1. Open the SSH configuration file:
 
    ```bash
+   sudo nano /etc/ssh/sshd_config
+   ```
+
+2. Enable password authentication:
+
+   ```
    PasswordAuthentication yes
+   ```
+
+3. (Optional, not recommended) Allow root login:
+
+   ```
    PermitRootLogin yes
    ```
 
-2. After confirming SSH access from the local machine, run:
+4. Restart SSH:
 
    ```bash
-   export TERM=xterm
+   sudo systemctl restart sshd
    ```
 
 ---
 
-## **4. Install Required Packages and Tools**
+## 5. Install Required Packages
 
-1. Update the system:
+1. Update system packages:
 
    ```bash
    sudo yum update -y
    ```
-2. Install Git, Apache, and additional utilities:
+
+2. Install Git, Apache, and other utilities:
 
    ```bash
    sudo yum install -y git httpd yum-utils
    ```
-3. Add the official Docker repository:
+
+3. Add Docker’s repository:
 
    ```bash
    sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
    ```
+
 4. Install Docker:
 
    ```bash
    sudo yum install -y docker-ce docker-ce-cli containerd.io
    ```
-5. Enable and start Docker:
+
+5. Enable and start the Docker service:
 
    ```bash
    sudo systemctl enable docker
@@ -102,75 +126,142 @@ To provide both internet access and local connectivity with the host machine:
 
 ---
 
-## **5. Deploy the Application**
+## 6. Deploy the PHP Application
 
 1. Clone the repository:
 
    ```bash
-   cd /home
    git clone https://github.com/nnhida/php-hybrid-infra.git
    cd php-hybrid-infra
    ```
-2. Configure the `config.php` file
-3. Prepare the RDS database schema:
+
+2. Edit the `config.php` file and configure your AWS credentials and RDS connection.
+
+3. Set up the database schema in your RDS instance:
 
    ```sql
-   CREATE DATABASE db_sekolah;
-   USE db_sekolah;
    CREATE TABLE siswa (
-       id INT(11) PRIMARY KEY AUTO_INCREMENT,
-       name VARCHAR(255) NOT NULL,
-       student_number INT(11) NOT NULL,
-       class VARCHAR(100) NOT NULL,
-       photo_key VARCHAR(255) NULL
+     id INT(11) PRIMARY KEY AUTO_INCREMENT,
+     nama VARCHAR(255) NOT NULL,
+     nomor_presensi INT(11) NOT NULL,
+     kelas VARCHAR(100) NOT NULL,
+     foto_key VARCHAR(255) NULL
    );
+   ```
+
+4. Configure the required permissions in your S3 bucket policy:
+
+   ```json
+   {
+     "Version": "2012-10-17",
+     "Statement": [
+       {
+         "Effect": "Allow",
+         "Principal": "*",
+         "Action": ["s3:GetObject", "s3:PutObject"],
+         "Resource": "arn:aws:s3:::[your_bucket_name]/foto-siswa/*"
+       }
+     ]
+   }
    ```
 
 ---
 
-## **6. Build and Run the Docker Image**
+## 7. Build and Run the Docker Container
 
 1. Build the Docker image:
 
    ```bash
-   docker build -t crud-ukk-app .
+   docker build -t [image_name] .
    ```
+
 2. Run the container:
 
    ```bash
-   docker run -d -p 80:80 crud-ukk-app
+   docker run -d -p 80:80 [image_name]
    ```
 
 ---
 
-## **7. Configure DNS on MikroTik**
+## 8. Configure Domain Resolution with MikroTik
 
-1. Log in to MikroTik using **Winbox** or **WebFig**.
-2. Navigate to **IP → DNS**:
+1. Log in to your MikroTik router using Winbox or WebFig.
 
-   * Enable **Allow Remote Requests**.
+2. Go to **IP → DNS** and enable **Allow Remote Requests**.
+
 3. Add a **Static DNS Entry**:
 
-   * Name: `[your_domain]`
-   * Address: `(CentOS VM IP)`
-4. Configure your laptop’s DNS client to point to the MikroTik router’s IP.
-5. Test DNS resolution:
+   * Name: `[your_custom_domain]`
+   * Address: IP address of your CentOS VM
+
+4. On your client (host) machine, set the DNS server to the MikroTik router’s IP.
+
+5. Test the DNS configuration:
 
    ```bash
-   ping [your_domain]
+   ping [your_custom_domain]
    ```
-
-   If successful, the domain should resolve to the VM’s IP.
 
 ---
 
-## **8. Verify Application Deployment**
+## 9. Access the Web Application
 
 1. Open a web browser on the client machine.
-2. Access the application via the configured domain:
+2. Navigate to:
 
    ```
-   http://[your_domain]
+   http://[your_custom_domain]
    ```
+
+You should now see your deployed PHP application.
+
+---
+
+## Troubleshooting
+
+### Problem: SSH error "`: unknown terminal type.`"
+
+**Solution:**
+
+```bash
+export TERM=xterm
+```
+
+---
+
+### Problem: Docker build fails due to sandbox error
+
+Error message:
+
+```bash
+xz: Failed to enable the sandbox
+tar: Child returned status 1
+tar: Error is not recoverable: exiting now
+```
+
+**Option 1: Use `--no-sandbox`**
+
+1. In your `Dockerfile`, uncomment the following lines:
+
+   ```dockerfile
+   ENV XZ_OPT="--no-sandbox"
+   ENV XZ_DEFAULTS="--no-sandbox"
+   ```
+
+2. Build with additional security options:
+
+   ```bash
+   docker build --security-opt seccomp=unconfined -t [image_name] .
+   docker run -d -p 80:80 [image_name]
+   ```
+
+**Option 2: Use the fallback Dockerfile**
+
+If the above fails, use the fallback Dockerfile provided:
+
+```bash
+docker build -f Dockerfile.fallback -t [image_name] .
+docker run -d -p 80:80 [image_name]
+```
 
 ---

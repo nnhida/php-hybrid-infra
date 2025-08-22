@@ -1,5 +1,8 @@
 FROM php:8.2-apache
 
+# ENV XZ_OPT="--no-sandbox"
+# ENV XZ_DEFAULTS="--no-sandbox"
+
 RUN docker-php-ext-install mysqli
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
