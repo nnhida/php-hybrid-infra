@@ -17,7 +17,7 @@ if (isset($_POST['submit'])) {
                 'Bucket' => S3_BUCKET,
                 'Key'    => $foto_key,
                 'SourceFile' => $file['tmp_name'],
-                'ACL'    => 'public-read', // Agar foto bisa diakses publik
+                // 'ACL'    => 'public-read', // Agar foto bisa diakses publik
             ]);
         } catch (S3Exception $e) {
             die("Gagal mengunggah foto ke S3: " . $e->getMessage());
