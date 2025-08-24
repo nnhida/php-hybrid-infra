@@ -4,66 +4,58 @@ This guide explains how to deploy a PHP-based web application on a CentOS virtua
 
 ---
 
-## 1. Install CentOS on a Virtual Machine
+## Prerequisites
 
-1. Download **CentOS 9 ISO** from the official website.
-2. Create a new VM using **VirtualBox** or **VMware**.
-3. Boot from the ISO and install CentOS on the VM.
-
----
-
-## 2. Configure Virtual Network Adapters
-
-To enable internet access and communication with the host machine:
-
-1. In the VM settings under **Network**:
-
-   * **Adapter 1 (NAT)**: provides internet access.
-   * **Adapter 2 (Host-Only Adapter)**: allows communication with the host system.
+1. Prepare a **MikroTik router** with internet access.
+   * The MikroTik router will serve as the **gateway.**
+   * MikroTik will also act as the **DNS server** for the custom domain.
+2. Install CentOS on a Virtual Machine
+   * Download **CentOS 9 ISO**.
+   * Create a new VM using **VirtualBox** or **VMware**.
+   * Boot from the ISO and install CentOS on the VM.
+3. Login to your AWS account
 
 ---
 
-## 3. Configure Networking in CentOS
+## 1. Configure Virtual Network Adapters
 
-1. Check your current IP address:
+To allow your VM to access the internet **and** communicate with the host machine:
+
+1. Open the VM **Settings → Network**.
+2. Set **Attached to** → **Bridged Adapter**.
+3. In the **Name** dropdown, choose the network interface your computer uses to access the internet.
+
+   * Example: If your laptop connects via Wi-Fi, select **wlan0**.
+
+---
+
+## 2. Configure Networking in CentOS
+
+1. Check the VM’s IP address:
 
    ```bash
    ip a
    ```
 
-2. Use the terminal UI to configure your network:
+2. Verify that the VM’s IP address is on the same network as your host machine (the one you selected in the adapter settings, e.g., wlan0).
+
+3. Test connectivity:
 
    ```bash
-   nmtui
+   ping google.com        
+   ping [host_machine_ip] 
    ```
 
-   * Edit or add a connection.
-   * Set **IPv4** to **Manual**.
-   * Assign a static IP address within the host-only network range.
-
-3. Restart the Network Manager:
+4. Allow HTTP traffic on port 80 (for web server access):
 
    ```bash
-   sudo systemctl restart NetworkManager
-   ```
-
-4. Test connectivity:
-
-   ```bash
-   ping google.com
-   ping [host_machine_ip]
-   ```
-
-5. Open HTTP port 80 on the firewall:
-
-   ```bash
-   sudo firewall-cmd --add-port=80/tcp --permanent
+   sudo firewall-cmd --permanent --add-port=80/tcp
    sudo firewall-cmd --reload
    ```
 
 ---
 
-## 4. (Optional) Enable SSH Access
+## 3. (Optional) Enable SSH Access
 
 1. Open the SSH configuration file:
 
@@ -91,30 +83,24 @@ To enable internet access and communication with the host machine:
 
 ---
 
-## 5. Install Required Packages
+## 4. Install Required Packages
 
 1. Update system packages:
 
    ```bash
-   sudo yum update -y
+   sudo yum update -y && sudo yum install yum-utils -y
    ```
 
-2. Install Git, Apache, and other utilities:
-
-   ```bash
-   sudo yum install -y git httpd yum-utils
-   ```
-
-3. Add Docker’s repository:
+2. Add Docker’s repository:
 
    ```bash
    sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
    ```
 
-4. Install Docker:
+3. Install Git and other utilities:
 
    ```bash
-   sudo yum install -y docker-ce docker-ce-cli containerd.io
+   sudo yum install -y git docker-ce docker-ce-cli containerd.io
    ```
 
 5. Enable and start the Docker service:
@@ -126,30 +112,41 @@ To enable internet access and communication with the host machine:
 
 ---
 
-## 6. Deploy the PHP Application
+## 5. Deploy the PHP Application
 
-1. Clone the repository:
+### 1. Clone the Repository
 
-   ```bash
-   git clone https://github.com/nnhida/php-hybrid-infra.git
-   cd php-hybrid-infra
-   ```
+On your VM:
 
-2. Edit the `config.php` file and configure your AWS credentials and RDS connection.
+```bash
+git clone https://github.com/nnhida/php-hybrid-infra.git
+cd php-hybrid-infra
+```
 
-3. Set up the database schema in your RDS instance:
+---
 
-   ```sql
-   CREATE TABLE siswa (
-     id INT(11) PRIMARY KEY AUTO_INCREMENT,
-     nama VARCHAR(255) NOT NULL,
-     nomor_presensi INT(11) NOT NULL,
-     kelas VARCHAR(100) NOT NULL,
-     foto_key VARCHAR(255) NULL
-   );
-   ```
+### 2. Configure AWS Resources
 
-4. Configure the required permissions in your S3 bucket policy:
+1. **Create a VPC**
+
+   * Open the **VPC Console**.
+   * Create a new **VPC** with **2 public subnets** in different Availability Zones (AZs).
+
+2. **Create a Security Group**
+
+   * Allow inbound MySQL traffic (port **3306**) **only** from your laptop’s public IP.
+
+3. **Set Up RDS (MySQL)**
+
+   * Create an **RDS instance** (MySQL-compatible).
+   * Enable **public access**.
+   * Set the **database name** to `db_sekolah`.
+
+4. **Create an S3 Bucket**
+
+   * Make a **public bucket**.
+
+5. **Update the S3 Bucket Policy** to allow application access:
 
    ```json
    {
@@ -158,7 +155,10 @@ To enable internet access and communication with the host machine:
        {
          "Effect": "Allow",
          "Principal": "*",
-         "Action": ["s3:GetObject", "s3:PutObject"],
+         "Action": [
+           "s3:GetObject",
+           "s3:PutObject"
+         ],
          "Resource": "arn:aws:s3:::[your_bucket_name]/foto-siswa/*"
        }
      ]
@@ -167,23 +167,41 @@ To enable internet access and communication with the host machine:
 
 ---
 
-## 7. Build and Run the Docker Container
+### 3. Configure the Application
 
-1. Build the Docker image:
+1. Open `config.php` in the project.
+2. Set your **AWS credentials**, **S3 bucket name**, and **RDS connection details** (host, username, password, and database).
+
+---
+
+### 4. Set Up the Database Schema
+
+Log in to your RDS MySQL instance and create the required table:
+
+```sql
+CREATE TABLE siswa (
+  id INT(11) PRIMARY KEY AUTO_INCREMENT,
+  nama VARCHAR(255) NOT NULL,
+  nomor_presensi INT(11) NOT NULL,
+  kelas VARCHAR(100) NOT NULL,
+  foto_key VARCHAR(255) NULL
+);
+```
+
+---
+
+## 6. Build and Run the Docker Container
+
+On your VM:
 
    ```bash
    docker build -t [image_name] .
-   ```
-
-2. Run the container:
-
-   ```bash
    docker run -d -p 80:80 [image_name]
    ```
 
 ---
 
-## 8. Configure Domain Resolution with MikroTik
+## 7. Configure Domain Resolution with MikroTik
 
 1. Log in to your MikroTik router using Winbox or WebFig.
 
@@ -204,7 +222,7 @@ To enable internet access and communication with the host machine:
 
 ---
 
-## 9. Access the Web Application
+## 8. Access the Web Application
 
 1. Open a web browser on the client machine.
 2. Navigate to:
@@ -219,7 +237,7 @@ You should now see your deployed PHP application.
 
 ## Troubleshooting
 
-### Problem: SSH error "`: unknown terminal type.`"
+### Problem: Error on terminal after SSH "`: unknown terminal type.`"
 
 **Solution:**
 
