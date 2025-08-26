@@ -1,152 +1,103 @@
 # Deploying a PHP Website on CentOS VM with Docker, AWS RDS, S3, and MikroTik DNS
 
-This guide explains how to deploy a PHP-based web application on a CentOS virtual machine using Docker. It connects to AWS RDS for database storage, uses Amazon S3 for image storage, and configures domain resolution using a MikroTik router.
+This guide explains how to deploy a PHP-based web application on a CentOS virtual machine using Docker.  
+It connects to **AWS RDS** for database storage, uses **Amazon S3** for image storage, and configures domain resolution using a **MikroTik router**.
 
 ---
 
 ## Prerequisites
 
-1. Prepare a **MikroTik router** with internet access.
-   * The MikroTik router will serve as the **gateway.**
-   * MikroTik will also act as the **DNS server** for the custom domain.
-2. Install CentOS on a Virtual Machine
-   * Download **CentOS 9 ISO**.
-   * Create a new VM using **VirtualBox** or **VMware**.
-   * Boot from the ISO and install CentOS on the VM.
-3. Login to your AWS account
+1. **MikroTik router** with internet access.  
+   * Will serve as the **gateway** and the **DNS server** for the custom domain.  
+
+2. **CentOS VM**  
+   * Download **CentOS 9 ISO**.  
+   * Create a VM in **VirtualBox** or **VMware**.  
+   * Install CentOS on the VM.  
+
+3. **AWS Account** with access to VPC, RDS, and S3.  
 
 ---
 
-## 1. Configure Virtual Network Adapters
+## MikroTik Setup
 
-To allow your VM to access the internet **and** communicate with the host machine:
+### Configure MikroTik for Internet Access
 
-1. Open the VM **Settings → Network**.
-2. Set **Attached to** → **Bridged Adapter**.
-3. In the **Name** dropdown, choose the network interface your computer uses to access the internet.
+1. **Wireless → Security Profiles**  
+   * Edit an existing profile or create a new one.  
+   * Enable all security options.  
+   * Enter the Wi-Fi password.  
+   * **Apply** → **OK**.  
 
-   * Example: If your laptop connects via Wi-Fi, select **wlan0**.
+2. **Wireless → Interfaces**  
+   * Select your `wlan` interface.  
+   * Set **Mode** to `station`.  
+   * Scan and connect to the SSID.  
+   * Assign the Security Profile.  
+   * **Apply** → **OK**.  
 
----
+3. **IP → DHCP Client → +**  
+   * **Interface**: `[your_wlan_interface]`  
+   * **Add Default Route**: ✓  
+   * **Use Peer DNS**: ✓ (or uncheck if using public DNS)  
+   * **OK**  
+   * Verify **Status = bound** (shows IP Address + Gateway).  
 
-## 2. Configure Networking in CentOS
-
-1. Check the VM’s IP address:
-
-   ```bash
-   ip a
-   ```
-
-2. Verify that the VM’s IP address is on the same network as your host machine (the one you selected in the adapter settings, e.g., wlan0).
-
-3. Test connectivity:
-
-   ```bash
-   ping google.com        
-   ping [host_machine_ip] 
-   ```
-
-4. Allow HTTP traffic on port 80 (for web server access):
-
-   ```bash
-   sudo firewall-cmd --permanent --add-port=80/tcp
-   sudo firewall-cmd --reload
-   ```
+4. **IP → Firewall → NAT → +**  
+   * **Chain**: `srcnat`  
+   * **Out. Interface**: `[your_wlan_interface]`  
+   * **Action**: `masquerade`  
+   * **OK**  
 
 ---
 
-## 3. (Optional) Enable SSH Access
+### Configure `ether` as LAN
 
-1. Open the SSH configuration file:
+1. **Interfaces → Ethernet**  
+   * Ensure `ether` is not a slave.  
+   * If shown as *S slave* to `ether2-master`: open → set **Master Port = none** → **Apply**.  
 
-   ```bash
-   sudo nano /etc/ssh/sshd_config
-   ```
+2. **IP → Addresses → +**  
+   * **Address**: `192.168.10.1/24` or any IP you desire
+   * **Interface**: `ether` → **OK**  
 
-2. Enable password authentication:
-
-   ```
-   PasswordAuthentication yes
-   ```
-
-3. (Optional, not recommended) Allow root login:
-
-   ```
-   PermitRootLogin yes
-   ```
-
-4. Restart SSH:
-
-   ```bash
-   sudo systemctl restart sshd
-   ```
+3. **IP → DHCP Server → DHCP Setup**  
+   * **Interface**: `ether`  
+   * **DHCP Address Space**: `192.168.10.0/24`  
+   * **Gateway**: `192.168.10.1`  
+   * **Address Pool**: `192.168.10.10–192.168.10.100`  
+   * **DNS Servers**: `192.168.10.1`  
 
 ---
 
-## 4. Install Required Packages
+## AWS Setup
 
-1. Update system packages:
+### AWS Credentials
+1. Copy credentials under **AWS Details** on Learner Lab.  
+2. Click **Start Lab** to initialize.  
 
-   ```bash
-   sudo yum update -y && sudo yum install yum-utils -y
-   ```
+### VPC
+1. Create a new **VPC**.  
+2. Add **two public subnets** in different Availability Zones.  
+3. Enable **DNS hostnames** and **DNS resolution**.  
 
-2. Add Docker’s repository:
+### Security Group
+1. Create a new **Security Group** for RDS.  
+2. Inbound rule:  
+   * **Type**: MySQL/Aurora (3306)  
+   * **Source**: Anywhere (temporary for testing).  
 
-   ```bash
-   sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
-   ```
+### RDS
+1. Create a new **MySQL database instance**.  
+2. **Template**: Sandbox.  
+3. Set **username** and **password**.  
+4. Select your **VPC** and **Security Group**.  
+5. **Public Access**: Yes.  
+6. Under **Additional Settings**: set DB name = `db_sekolah`.  
 
-3. Install Git and other utilities:
-
-   ```bash
-   sudo yum install -y git docker-ce docker-ce-cli containerd.io
-   ```
-
-5. Enable and start the Docker service:
-
-   ```bash
-   sudo systemctl enable docker
-   sudo systemctl start docker
-   ```
-
----
-
-## 5. Deploy the PHP Application
-
-### 1. Clone the Repository
-
-On your VM:
-
-```bash
-git clone https://github.com/nnhida/php-hybrid-infra.git
-cd php-hybrid-infra
-```
-
----
-
-### 2. Configure AWS Resources
-
-1. **Create a VPC**
-
-   * Open the **VPC Console**.
-   * Create a new **VPC** with **2 public subnets** in different Availability Zones (AZs).
-
-2. **Create a Security Group**
-
-   * Allow inbound MySQL traffic (port **3306**) **only** from your laptop’s public IP.
-
-3. **Set Up RDS (MySQL)**
-
-   * Create an **RDS instance** (MySQL-compatible).
-   * Enable **public access**.
-   * Set the **database name** to `db_sekolah`.
-
-4. **Create an S3 Bucket**
-
-   * Make a **public bucket**.
-
-5. **Update the S3 Bucket Policy** to allow application access:
+### S3
+1. Create a **new public bucket**.  
+2. Add this **bucket policy** under Permissions (replace `[your_bucket_name]`):  
 
    ```json
    {
@@ -163,86 +114,120 @@ cd php-hybrid-infra
        }
      ]
    }
+   ````
+
+---
+
+## Setup Database Schema
+
+1. Connect using **MySQL Workbench**, **TablePlus**, or `mysql` CLI.
+2. Create the schema:
+
+   ```sql
+   CREATE TABLE siswa (
+     id INT AUTO_INCREMENT PRIMARY KEY,
+     nama VARCHAR(255) NOT NULL,
+     nomor_presensi INT NOT NULL,
+     kelas VARCHAR(100) NOT NULL,
+     foto_key VARCHAR(255)
+   );
    ```
 
 ---
 
-### 3. Configure the Application
+## Setup VM (CentOS)
 
-1. Open `config.php` in the project.
-2. Set your **AWS credentials**, **S3 bucket name**, and **RDS connection details** (host, username, password, and database).
+### 1. Configure Network
 
----
+* VM Settings → **Network → Bridged Adapter**
+* Check IP:
 
-### 4. Set Up the Database Schema
+  ```bash
+  ip a
+  ```
+* Test connectivity:
 
-Log in to your RDS MySQL instance and create the required table:
+  ```bash
+  ping google.com
+  ping [host_machine_ip]
+  ```
+* Open port 80:
 
-```sql
-CREATE TABLE siswa (
-  id INT(11) PRIMARY KEY AUTO_INCREMENT,
-  nama VARCHAR(255) NOT NULL,
-  nomor_presensi INT(11) NOT NULL,
-  kelas VARCHAR(100) NOT NULL,
-  foto_key VARCHAR(255) NULL
-);
+  ```bash
+  sudo firewall-cmd --permanent --add-port=80/tcp
+  sudo firewall-cmd --reload
+  ```
+
+### 2. (Optional) SSH Access
+
+* Edit `/etc/ssh/sshd_config`:
+
+  * `PasswordAuthentication yes`
+  * (Optional, not recommended) `PermitRootLogin yes`
+* Restart SSH:
+
+  ```bash
+  sudo systemctl restart sshd
+  ```
+
+### 3. Install Packages
+
+```bash
+sudo yum update -y && sudo yum install -y yum-utils git
+sudo yum-config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+sudo yum install -y docker-ce docker-ce-cli containerd.io
+sudo systemctl enable docker
+sudo systemctl start docker
 ```
 
----
+### 4. Deploy PHP App
 
-## 6. Build and Run the Docker Container
+```bash
+git clone https://github.com/nnhida/php-hybrid-infra.git
+cd php-hybrid-infra
+```
 
-On your VM:
+* Edit `config.php` → add **AWS credentials**, **S3 bucket**, **RDS details**.
+* Build & run:
 
-   ```bash
-   docker build -t [image_name] .
-   docker run -d -p 80:80 [image_name]
-   ```
+  ```bash
+  docker build -t php-app .
+  docker run -d -p 80:80 php-app
+  ```
 
----
+### 5. Configure Domain with MikroTik
 
-## 7. Configure Domain Resolution with MikroTik
+* On MikroTik → **IP → DNS → Allow Remote Requests**.
+* Add Static DNS:
 
-1. Log in to your MikroTik router using Winbox or WebFig.
-
-2. Go to **IP → DNS** and enable **Allow Remote Requests**.
-
-3. Add a **Static DNS Entry**:
-
-   * Name: `[your_custom_domain]`
-   * Address: IP address of your CentOS VM
-
-4. On your client (host) machine, set the DNS server to the MikroTik router’s IP.
-
-5. Test the DNS configuration:
-
-   ```bash
-   ping [your_custom_domain]
-   ```
+  * **Name**: `[your_custom_domain]`
+  * **Address**: `[CentOS_VM_IP]`
 
 ---
 
-## 8. Access the Web Application
+## Access the Web Application
 
-1. Open a web browser on the client machine.
-2. Navigate to:
+In browser:
 
-   ```
-   http://[your_custom_domain]
-   ```
-
-You should now see your deployed PHP application.
+```
+http://[your_custom_domain]
+```
 
 ---
 
 ## Troubleshooting
 
-### Problem: Error on terminal after SSH "`: unknown terminal type.`"
-
-**Solution:**
+### Error: `unknown terminal type` after SSH
 
 ```bash
 export TERM=xterm
 ```
 
----
+### Error: `RequestTimeTooSkewed` when uploading to S3
+
+Fix time sync on VM:
+
+```bash
+sudo timedatectl set-ntp true
+timedatectl status
+```
